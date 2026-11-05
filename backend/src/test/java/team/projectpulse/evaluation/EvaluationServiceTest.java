@@ -316,6 +316,42 @@ class EvaluationServiceTest {
     }
 
     @Test
+    void rejectsNewEvaluationForInactiveTeammate() {
+        Clock fixedClock = Clock.fixed(LocalDate.of(2023, 8, 13)
+                .atStartOfDay(ZoneId.systemDefault()).toInstant(), ZoneId.systemDefault());
+        given(this.clock.instant()).willReturn(fixedClock.instant());
+        given(this.clock.getZone()).willReturn(fixedClock.getZone());
+        woody.setEnabled(false);
+        PeerEvaluation evaluation = new PeerEvaluation("2023-W31", amanda, woody, List.of(), "", "");
+
+        assertThat(catchThrowable(() -> evaluationService.addPeerEvaluation(evaluation)))
+                .isInstanceOf(PeerEvaluationIllegalArgumentException.class)
+                .hasMessageContaining("inactive student");
+        verify(evaluationRepository, times(0)).save(evaluation);
+    }
+
+    @Test
+    void inactiveStudentAppearsOnlyInWeeksWithRetainedEvaluations() {
+        eric.setEnabled(false);
+        eric.setTeam(null);
+        Section section = new Section();
+        given(sectionRepository.findById(1)).willReturn(java.util.Optional.of(section));
+        given(studentRepository.findBySectionSectionId(1)).willReturn(List.of(eric));
+        given(evaluationRepository.findByWeekAndEvaluateeId("2023-W31", eric.getId()))
+                .willReturn(ericsW31Evaluations);
+
+        var historical = evaluationService.generateWeeklyPeerEvaluationReportForSection(1, "2023-W31");
+        assertThat(historical.getPeerEvaluationAverages()).singleElement().satisfies(row -> {
+            assertThat(row.getStudentId()).isEqualTo(eric.getId());
+            assertThat(row.getTeamName()).isNull();
+            assertThat(row.getPublicComments()).containsExactlyElementsOf(
+                    ericsW31Evaluations.stream().map(PeerEvaluation::getPublicComment).toList());
+        });
+        assertThat(evaluationService.generateWeeklyPeerEvaluationReportForSection(1, "2023-W30")
+                .getPeerEvaluationAverages()).isEmpty();
+    }
+
+    @Test
     void testAddPeerEvaluationNotInActiveWeeks() {
         // Given
         // No clock is needed here: an inactive week is refused before the previous-week check reads the clock

@@ -106,12 +106,12 @@
     <div style="display: flex; justify-content: flex-end">
       <el-button
         type="primary"
-        @click="submitPeerEvaluations"
+        @click="savePeerEvaluations"
         v-if="isNewSubmission"
         :loading="isLoading"
         >Submit</el-button
       >
-      <el-button type="warning" @click="updatePeerEvaluations" :loading="isLoading" v-else
+      <el-button type="warning" @click="savePeerEvaluations" :loading="isLoading" v-else
         >Update</el-button
       >
     </div>
@@ -150,7 +150,7 @@ const peerEvalutions = ref<PeerEvaluation[]>()
 
 const loading = ref<boolean>(false)
 
-let isNewSubmission = true // Flag to indicate if this is a new submission or an update
+const isNewSubmission = ref(true)
 
 const teamId = ref<number>(NaN) // Team ID of the student
 
@@ -174,8 +174,11 @@ onMounted(async () => {
   sectionId.value = (userInfoStore.userInfo as Student).sectionId
   await loadCriteria()
   loading.value = true
-  prepareStartingPeerEvaluations()
-  loading.value = false
+  try {
+    await prepareStartingPeerEvaluations()
+  } finally {
+    loading.value = false
+  }
 })
 
 // Load activities based on the search criteria
@@ -202,14 +205,10 @@ async function prepareStartingPeerEvaluations() {
     previousWeek.value
   )
 
-  // If the student has already submitted evaluations for the current week, load them
-  if (result.data.length > 0) {
-    peerEvalutions.value = result.data
-    isNewSubmission = false
-  } else {
-    // If not, create a new set of evaluations
-    isNewSubmission = true
-    peerEvalutions.value = students.value.map((student) => ({
+  const savedIds = new Set(result.data.map((evaluation) => evaluation.evaluateeId))
+  const newEvaluations = students.value
+    .filter((student) => student.enabled && !savedIds.has(student.id as number))
+    .map((student) => ({
       week: previousWeek.value,
       evaluatorId: (userInfoStore.userInfo as Student).id as number,
       evaluateeId: student.id as number,
@@ -222,39 +221,47 @@ async function prepareStartingPeerEvaluations() {
       publicComment: '',
       privateComment: ''
     }))
-  }
+  peerEvalutions.value = [...result.data, ...newEvaluations]
+  isNewSubmission.value = newEvaluations.length > 0
 }
 
-// Submit peer evaluations
-async function submitPeerEvaluations() {
-  if (peerEvalutions.value) {
-    const submitPromises = peerEvalutions.value.map(async (evaluation) => {
-      const result: SubmitPeerEvaluationResponse = await submitEvaluation(evaluation)
-      return result.data
-    })
-    isLoading.value = true
-    peerEvalutions.value = await Promise.all(submitPromises) // Wait for all promises to resolve
-    isNewSubmission = false // Change to update mode
-    ElMessage.success('Peer evaluations submitted successfully')
-    isLoading.value = false
-
-    // Send an submission confirmation email to the submitter
-    await sendPeerEvaluationSubmissionConfirmationEmail(previousWeekRange.value)
-    ElMessage.success('A confirmation email has been sent to you.')
-  }
-}
-
-// Update peer evaluations
-async function updatePeerEvaluations() {
-  if (peerEvalutions.value) {
-    const submitPromises = peerEvalutions.value.map(async (evaluation) => {
-      const result: UpdatePeerEvaluationResponse = await updateEvaluation(evaluation)
-      return result.data
-    })
-
-    isLoading.value = true
-    peerEvalutions.value = await Promise.all(submitPromises) // Wait for all promises to resolve
-    ElMessage.success('Peer evaluations updated successfully')
+async function savePeerEvaluations() {
+  if (isLoading.value || !peerEvalutions.value?.length) return
+  const submitting = isNewSubmission.value
+  isLoading.value = true
+  try {
+    const results = await Promise.allSettled(
+      peerEvalutions.value.map(async (evaluation) => {
+        const result: SubmitPeerEvaluationResponse | UpdatePeerEvaluationResponse =
+          evaluation.evaluationId
+            ? await updateEvaluation(evaluation)
+            : await submitEvaluation(evaluation)
+        return result.data
+      })
+    )
+    if (results.some((result) => result.status === 'rejected')) {
+      // Some requests may have saved before the roster changed. Reload the saved rows before retrying.
+      peerEvalutions.value = undefined
+      await loadStudents()
+      await prepareStartingPeerEvaluations()
+      return
+    }
+    peerEvalutions.value = results.flatMap((result) =>
+      result.status === 'fulfilled' ? [result.value] : []
+    )
+    isNewSubmission.value = false
+    ElMessage.success(
+      submitting
+        ? 'Peer evaluations submitted successfully'
+        : 'Peer evaluations updated successfully'
+    )
+    if (submitting) {
+      await sendPeerEvaluationSubmissionConfirmationEmail(previousWeekRange.value)
+      ElMessage.success('A confirmation email has been sent to you.')
+    }
+  } catch {
+    // The request interceptor displays the error.
+  } finally {
     isLoading.value = false
   }
 }
