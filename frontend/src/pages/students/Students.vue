@@ -47,6 +47,7 @@
             plain
             type="primary"
             @click.stop="showEditStudentDialog(row)"
+            data-cy="student-edit"
           ></el-button>
         </template>
       </el-table-column>
@@ -69,6 +70,7 @@
     <!-- Dialog for editing student -->
     <el-dialog v-model="dialogVisible" title="Edit a student" width="30%" destroy-on-close>
       <EditStudentForm
+        v-if="studentBeingEditedId !== undefined"
         :studentId="studentBeingEditedId"
         @close-dialog="closeDialog"
       ></EditStudentForm>

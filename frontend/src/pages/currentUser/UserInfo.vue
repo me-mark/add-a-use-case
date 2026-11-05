@@ -66,6 +66,7 @@ const userInfo = ref<Student | Instructor>({
 })
 
 const userForm = ref()
+const expectedStudentEnabled = ref(userInfo.value.enabled === true)
 
 const rules = {
   username: [
@@ -94,7 +95,11 @@ async function updateCurrentUser() {
   // course and course section) from a persisted store nothing else refreshes, which locked her out of every page
   // that needs a team until she logged in again.
   if (userInfoStore.isStudent) {
-    const result: UpdateStudentResponse = await updateStudent(userInfo.value as Student)
+    const result: UpdateStudentResponse = await updateStudent(
+      userInfo.value as Student,
+      expectedStudentEnabled.value
+    )
+    expectedStudentEnabled.value = result.data.enabled === true
     ElMessage.success('User updated successfully')
     userInfoStore.setUserInfo(result.data)
   } else if (userInfoStore.isInstructor) {
