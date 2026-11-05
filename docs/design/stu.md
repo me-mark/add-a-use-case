@@ -17,7 +17,7 @@ classDiagram
     EditStudentForm --> StudentApi
     StudentApi --> StudentController
     StudentController --> StudentService
-    StudentService --> StudentSecurityService
+    StudentService --> UserUtils
     StudentService --> StudentRepository
     SecurityConfiguration --> ActiveAccountJwtValidator
     ActiveAccountJwtValidator --> UserRepository
@@ -29,7 +29,7 @@ classDiagram
 - Reused/extended: [StudentController](../../backend/src/main/java/team/projectpulse/student/StudentController.java), [StudentService](../../backend/src/main/java/team/projectpulse/student/StudentService.java), [StudentSecurityService](../../backend/src/main/java/team/projectpulse/student/StudentSecurityService.java), [StudentRepository](../../backend/src/main/java/team/projectpulse/student/StudentRepository.java).
 - New: `security/ActiveAccountJwtValidator.java`, a Spring Security `OAuth2TokenValidator<Jwt>` backed by the reused [UserRepository](../../backend/src/main/java/team/projectpulse/user/UserRepository.java).
 - Reused/extended: [SecurityConfiguration](../../backend/src/main/java/team/projectpulse/security/SecurityConfiguration.java), [EvaluationService](../../backend/src/main/java/team/projectpulse/evaluation/EvaluationService.java), [PeerEvaluationRepository](../../backend/src/main/java/team/projectpulse/evaluation/PeerEvaluationRepository.java), and [SubmitTeamsEvaluations.vue](../../frontend/src/pages/evaluations/SubmitTeamsEvaluations.vue).
-- Reused unchanged unless regression evidence requires a fix: [SubmissionStatusService](../../backend/src/main/java/team/projectpulse/notification/SubmissionStatusService.java), existing reminder callers, DTO converters, `Result`, and exception advice.
+- Reused unchanged unless regression evidence requires a fix: [SubmissionStatusService](../../backend/src/main/java/team/projectpulse/notification/SubmissionStatusService.java), existing reminder callers, DTO converters, and `Result`. Exception advice maps stale profile edits to `409`.
 
 ## Sequence
 
@@ -39,7 +39,7 @@ sequenceDiagram
     participant UI as Student detail/edit view
     participant Security as JWT decoder and route rule
     participant Service as StudentService
-    participant Access as StudentSecurityService
+    participant Access as UserUtils
     participant DB as Repositories
     Instructor->>UI: Identify and view student (steps 1–2)
     Instructor->>UI: Choose Deactivate (step 3)
