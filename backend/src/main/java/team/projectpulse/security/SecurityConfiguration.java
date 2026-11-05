@@ -25,6 +25,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
@@ -342,8 +343,14 @@ public class SecurityConfiguration {
     }
 
     @Bean
-    public JwtDecoder jwtDecoder() {
-        return NimbusJwtDecoder.withPublicKey(this.publicKey).build();
+    public JwtDecoder jwtDecoder(ActiveAccountJwtValidator activeAccountValidator) {
+        NimbusJwtDecoder decoder = NimbusJwtDecoder.withPublicKey(this.publicKey).build();
+        var defaultValidator = JwtValidators.createDefault();
+        decoder.setJwtValidator(jwt -> {
+            var result = defaultValidator.validate(jwt);
+            return result.hasErrors() ? result : activeAccountValidator.validate(jwt);
+        });
+        return decoder;
     }
 
     @Bean
