@@ -28,6 +28,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.*;
@@ -127,7 +128,8 @@ class StudentServiceTest {
     void testStudentUpdateOwnInfo() {
         // Given
         Student update = new Student("john", "John (updated)", "Smith (updated)", "j.smith@abc.edu (updated)", "", false, "admin student");
-        given(this.studentRepository.findById(1)).willReturn(Optional.of(this.students.get(0)));
+        given(this.userUtils.getUserId()).willReturn(1);
+        given(this.studentRepository.findProfileForUpdate(1, 1, true, false)).willReturn(Optional.of(this.students.get(0)));
         given(this.studentRepository.save(any(Student.class))).willReturn(this.students.get(0));
 
         Instructor instructor = new Instructor();
@@ -139,7 +141,7 @@ class StudentServiceTest {
         SecurityContextHolder.setContext(securityContext);
 
         // When
-        Student result = this.studentService.updateStudent(1, update);
+        Student result = this.studentService.updateStudent(1, update, true);
 
         // Then
         assertThat(result.getUsername()).isEqualTo(update.getUsername());
@@ -153,8 +155,11 @@ class StudentServiceTest {
     @Test
     void testInstructorUpdatesStudent() {
         // Given
-        Student update = new Student("john", "John (updated)", "Smith (updated)", "j.smith@abc.edu (updated)", "", false, "admin student");
-        given(this.studentRepository.findById(1)).willReturn(Optional.of(this.students.get(0)));
+        Student update = new Student("john", "John (updated)", "Smith (updated)", "j.smith@abc.edu (updated)", "", true, "admin student");
+        this.students.get(0).setEnabled(false);
+        given(this.userUtils.getUserId()).willReturn(10);
+        given(this.userUtils.hasRole("ROLE_instructor")).willReturn(true);
+        given(this.studentRepository.findProfileForUpdate(1, 10, true, true)).willReturn(Optional.of(this.students.get(0)));
         given(this.studentRepository.save(any(Student.class))).willReturn(this.students.get(0));
 
         Instructor instructor = new Instructor();
@@ -166,7 +171,7 @@ class StudentServiceTest {
         SecurityContextHolder.setContext(securityContext);
 
         // When
-        Student result = this.studentService.updateStudent(1, update);
+        Student result = this.studentService.updateStudent(1, update, false);
 
         // Then
         assertThat(result.getUsername()).isEqualTo(update.getUsername());
@@ -175,6 +180,83 @@ class StudentServiceTest {
         assertThat(result.getEmail()).isEqualTo(update.getEmail());
 //        assertThat(result.getRoles()).isEqualTo(update.getRoles());
         assertThat(result.isEnabled()).isEqualTo(update.isEnabled());
+    }
+
+    @Test
+    void deactivationChangesOnlyStatusAndCanBeRepeated() {
+        Student student = this.students.get(0);
+        var team = new team.projectpulse.team.Team();
+        student.setTeam(team);
+        given(userUtils.getUserId()).willReturn(10);
+        given(userUtils.hasRole("ROLE_instructor")).willReturn(false);
+        given(userUtils.hasRole("ROLE_admin")).willReturn(true);
+        given(studentRepository.findProfileForUpdate(1, 10, false, true)).willReturn(Optional.of(student));
+        given(studentRepository.save(student)).willReturn(student);
+
+        assertThat(studentService.deactivateStudent(1).changed()).isTrue();
+        assertThat(studentService.deactivateStudent(1).changed()).isFalse();
+
+        assertThat(student.isEnabled()).isFalse();
+        assertThat(student.getTeam()).isSameAs(team);
+        assertThat(student.getFirstName()).isEqualTo("John");
+        verify(studentRepository, times(1)).save(student);
+    }
+
+    @Test
+    void unrelatedStaffCannotDeactivateAnAlreadyInactiveStudent() {
+        given(userUtils.getUserId()).willReturn(10);
+        given(userUtils.hasRole("ROLE_instructor")).willReturn(true);
+        given(studentRepository.existsById(1)).willReturn(true);
+
+        assertThatThrownBy(() -> studentService.deactivateStudent(1))
+                .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+        verify(studentRepository, never()).save(any(Student.class));
+    }
+
+    @Test
+    void missingStudentReturnsNotFoundToStaff() {
+        given(userUtils.getUserId()).willReturn(10);
+        given(userUtils.hasRole("ROLE_instructor")).willReturn(true);
+
+        assertThatThrownBy(() -> studentService.deactivateStudent(999))
+                .isInstanceOf(team.projectpulse.system.exception.ObjectNotFoundException.class);
+        verify(studentRepository, never()).save(any(Student.class));
+    }
+
+    @Test
+    void staleProfileSaveCannotReactivateOrRenameStudent() {
+        Student student = this.students.get(0);
+        student.setEnabled(false);
+        given(userUtils.getUserId()).willReturn(10);
+        given(userUtils.hasRole("ROLE_instructor")).willReturn(true);
+        given(studentRepository.findProfileForUpdate(1, 10, true, true)).willReturn(Optional.of(student));
+        Student update = new Student();
+        update.setEnabled(true);
+        update.setFirstName("Changed");
+
+        assertThatThrownBy(() -> studentService.updateStudent(1, update, true))
+                .isInstanceOf(team.projectpulse.system.exception.StudentStatusConflictException.class);
+        assertThat(student.isEnabled()).isFalse();
+        assertThat(student.getFirstName()).isEqualTo("John");
+        verify(studentRepository, never()).save(any(Student.class));
+    }
+
+    @Test
+    void genericStaffUpdateCannotDeactivateOrRenameStudent() {
+        Student student = this.students.get(0);
+        given(userUtils.getUserId()).willReturn(10);
+        given(userUtils.hasRole("ROLE_instructor")).willReturn(true);
+        given(studentRepository.findProfileForUpdate(1, 10, true, true)).willReturn(Optional.of(student));
+        Student update = new Student();
+        update.setEnabled(false);
+        update.setFirstName("Changed");
+
+        assertThatThrownBy(() -> studentService.updateStudent(1, update, true))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Deactivate student");
+        assertThat(student.isEnabled()).isTrue();
+        assertThat(student.getFirstName()).isEqualTo("John");
+        verify(studentRepository, never()).save(any(Student.class));
     }
 
     @Test

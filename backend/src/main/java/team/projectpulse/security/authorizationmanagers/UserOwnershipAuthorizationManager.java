@@ -55,4 +55,10 @@ public class UserOwnershipAuthorizationManager implements AuthorizationManager<R
         return new AuthorizationDecision(false);
     }
 
+    public AuthorizationResult authorizeStudentProfile(Supplier<? extends @Nullable Authentication> authentication,
+                                                       RequestAuthorizationContext context) {
+        Integer studentId = PathVariables.readId(context, "studentId");
+        return new AuthorizationDecision(studentId != null && studentSecurityService.canAccessProfile(studentId));
+    }
+
 }

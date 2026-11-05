@@ -66,6 +66,9 @@ public class EvaluationService {
         if (evaluatorTeamId == null || evaluateeTeam == null || !evaluatorTeamId.equals(evaluateeTeam.getTeamId())) {
             throw new PeerEvaluationIllegalArgumentException("The evaluator and evaluatee must be on the same team.");
         }
+        if (!newPeerEvaluation.getEvaluatee().isEnabled()) {
+            throw new PeerEvaluationIllegalArgumentException("You cannot submit a new evaluation for an inactive student.");
+        }
 
         // Make sure this is not a duplicate evaluation
         if (this.evaluationRepository.findByWeekAndEvaluatorIdAndEvaluateeId(newPeerEvaluation.getWeek(), newPeerEvaluation.getEvaluator().getId(), newPeerEvaluation.getEvaluatee().getId()).isPresent()) {
@@ -170,7 +173,10 @@ public class EvaluationService {
     public PeerEvaluationAverage getPeerEvaluationAverage(String week, Student student) {
         // Get all evaluations for the student in the given week
         List<PeerEvaluation> evaluations = this.evaluationRepository.findByWeekAndEvaluateeId(week, student.getId());
+        return summarizeEvaluations(week, student, evaluations);
+    }
 
+    private PeerEvaluationAverage summarizeEvaluations(String week, Student student, List<PeerEvaluation> evaluations) {
         PeerEvaluationAverage peerEvaluationAverage = new PeerEvaluationAverage();
 
         peerEvaluationAverage.setStudentId(student.getId());
@@ -220,14 +226,15 @@ public class EvaluationService {
 
         report.setSectionName(this.sectionRepository.findById(sectionId).orElseThrow(() -> new ObjectNotFoundException("section", sectionId)).getSectionName());
 
-        // Get all students in the section
-        List<Student> students = this.studentRepository.findBySectionSectionId(sectionId).stream().filter(student -> student.getTeam() != null).collect(Collectors.toList());
-
-        // For each student, compute her average total score, collect all public comments and private comments, and compute rating averages for each criterion.
-        students.forEach(student -> {
-            PeerEvaluationAverage peerEvaluationAverage = getPeerEvaluationAverage(week, student);
-            report.getPeerEvaluationAverages().add(peerEvaluationAverage);
-        });
+        for (Student student : this.studentRepository.findBySectionSectionId(sectionId)) {
+            if (student.isEnabled() && student.getTeam() == null) {
+                continue;
+            }
+            List<PeerEvaluation> evaluations = this.evaluationRepository.findByWeekAndEvaluateeId(week, student.getId());
+            if (student.isEnabled() || !evaluations.isEmpty()) {
+                report.getPeerEvaluationAverages().add(summarizeEvaluations(week, student, evaluations));
+            }
+        }
 
         // Who has not submitted is not part of this report: it is BR-submission-owed, which the notification slice
         // owns (GET /sections/{sectionId}/submission-status). This used to count a student as done after she

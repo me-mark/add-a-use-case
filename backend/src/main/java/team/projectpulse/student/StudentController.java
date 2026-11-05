@@ -63,11 +63,19 @@ public class StudentController {
     }
 
     @PutMapping("/{studentId}")
-    public Result updateStudent(@PathVariable Integer studentId, @Valid @RequestBody StudentDto studentDto) {
+    public Result updateStudent(@PathVariable Integer studentId, @RequestParam boolean expectedEnabled,
+                                @Valid @RequestBody StudentDto studentDto) {
         Student update = this.studentDtoToStudentConverter.convert(studentDto);
-        Student updatedStudent = this.studentService.updateStudent(studentId, update);
+        Student updatedStudent = this.studentService.updateStudent(studentId, update, expectedEnabled);
         StudentDto updatedStudentDto = this.studentToStudentDtoConverter.convert(updatedStudent);
         return new Result(true, StatusCode.SUCCESS, "Update student successfully", updatedStudentDto);
+    }
+
+    @PostMapping("/{studentId}/deactivate")
+    public Result deactivateStudent(@PathVariable Integer studentId) {
+        var outcome = this.studentService.deactivateStudent(studentId);
+        String message = outcome.changed() ? "Student deactivated successfully" : "Student is already deactivated";
+        return new Result(true, StatusCode.SUCCESS, message, this.studentToStudentDtoConverter.convert(outcome.student()));
     }
 
     @DeleteMapping("/{studentId}")

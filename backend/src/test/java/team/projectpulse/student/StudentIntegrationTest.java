@@ -26,6 +26,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultHandlers.print;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @DisplayName("Integration tests for Student API endpoints")
 class StudentIntegrationTest extends AbstractIntegrationTest {
@@ -81,6 +82,62 @@ class StudentIntegrationTest extends AbstractIntegrationTest {
         contentAsString = mvcResult.getResponse().getContentAsString();
         json = new JSONObject(contentAsString);
         this.adminTimToken = "Bearer " + json.getJSONObject("data").getString("token");
+    }
+
+    @Test
+    void deactivationRejectsExistingTokenAndRepeatedRequestIsSafe() throws Exception {
+        String student = this.baseUrl + "/students/4";
+        this.mockMvc.perform(get(student).header(HttpHeaders.AUTHORIZATION, this.studentJohnToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.enabled").value(true));
+
+        this.mockMvc.perform(post(student + "/deactivate").header(HttpHeaders.AUTHORIZATION, this.adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("Student deactivated successfully"))
+                .andExpect(jsonPath("$.data.enabled").value(false))
+                .andExpect(jsonPath("$.data.teamId").isNumber());
+
+        this.mockMvc.perform(get(student).header(HttpHeaders.AUTHORIZATION, this.studentJohnToken))
+                .andExpect(status().isUnauthorized());
+        this.mockMvc.perform(post(this.baseUrl + "/users/login").with(httpBasic("j.smith@abc.edu", "123456")))
+                .andExpect(status().isUnauthorized());
+        this.mockMvc.perform(post(student + "/deactivate").header(HttpHeaders.AUTHORIZATION, this.adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("Student is already deactivated"));
+        this.mockMvc.perform(post(student + "/deactivate").header(HttpHeaders.AUTHORIZATION, this.adminTimToken))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void deactivationRejectsStudentAndDistinguishesMissingOrInvalidTargets() throws Exception {
+        String path = this.baseUrl + "/students/";
+        this.mockMvc.perform(post(path + "4/deactivate").header(HttpHeaders.AUTHORIZATION, this.studentJohnToken))
+                .andExpect(status().isForbidden());
+        this.mockMvc.perform(post(path + "4/deactivate")).andExpect(status().isUnauthorized());
+        this.mockMvc.perform(post(path + "999999/deactivate").header(HttpHeaders.AUTHORIZATION, this.adminToken))
+                .andExpect(status().isNotFound());
+        this.mockMvc.perform(post(path + "invalid/deactivate").header(HttpHeaders.AUTHORIZATION, this.adminToken))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void staleEditDoesNotReactivateAndCurrentSnapshotStillAllowsReactivation() throws Exception {
+        String student = this.baseUrl + "/students/4";
+        String profile = this.jsonMapper.writeValueAsString(Map.of(
+                "username", "j.smith@abc.edu", "firstName", "Renamed", "lastName", "Smith",
+                "email", "j.smith@abc.edu", "enabled", true));
+        this.mockMvc.perform(post(student + "/deactivate").header(HttpHeaders.AUTHORIZATION, this.adminToken))
+                .andExpect(status().isOk());
+        this.mockMvc.perform(put(student).param("expectedEnabled", "true").contentType(MediaType.APPLICATION_JSON)
+                        .content(profile).header(HttpHeaders.AUTHORIZATION, this.adminToken))
+                .andExpect(status().isConflict());
+        this.mockMvc.perform(get(student).header(HttpHeaders.AUTHORIZATION, this.adminToken))
+                .andExpect(jsonPath("$.data.enabled").value(false))
+                .andExpect(jsonPath("$.data.firstName").value("John"));
+        this.mockMvc.perform(put(student).param("expectedEnabled", "false").contentType(MediaType.APPLICATION_JSON)
+                        .content(profile).header(HttpHeaders.AUTHORIZATION, this.adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.enabled").value(true));
     }
 
     @Test
@@ -238,7 +295,7 @@ class StudentIntegrationTest extends AbstractIntegrationTest {
         String json = this.jsonMapper.writeValueAsString(studentDto);
 
         // When and then
-        this.mockMvc.perform(put(this.baseUrl + "/students/4").contentType(MediaType.APPLICATION_JSON).content(json).accept(MediaType.APPLICATION_JSON).header(HttpHeaders.AUTHORIZATION, this.studentJohnToken))
+        this.mockMvc.perform(put(this.baseUrl + "/students/4").param("expectedEnabled", "true").contentType(MediaType.APPLICATION_JSON).content(json).accept(MediaType.APPLICATION_JSON).header(HttpHeaders.AUTHORIZATION, this.studentJohnToken))
                 .andExpect(jsonPath("$.flag").value(true))
                 .andExpect(jsonPath("$.code").value(StatusCode.SUCCESS))
                 .andExpect(jsonPath("$.message").value("Update student successfully"))
@@ -263,7 +320,7 @@ class StudentIntegrationTest extends AbstractIntegrationTest {
         String json = this.jsonMapper.writeValueAsString(studentDto);
 
         // When and then
-        this.mockMvc.perform(put(this.baseUrl + "/students/5").contentType(MediaType.APPLICATION_JSON).content(json).accept(MediaType.APPLICATION_JSON).header(HttpHeaders.AUTHORIZATION, this.studentJohnToken))
+        this.mockMvc.perform(put(this.baseUrl + "/students/5").param("expectedEnabled", "true").contentType(MediaType.APPLICATION_JSON).content(json).accept(MediaType.APPLICATION_JSON).header(HttpHeaders.AUTHORIZATION, this.studentJohnToken))
                 .andExpect(jsonPath("$.flag").value(false))
                 .andExpect(jsonPath("$.code").value(StatusCode.FORBIDDEN))
                 .andExpect(jsonPath("$.message").value("No permission."))
