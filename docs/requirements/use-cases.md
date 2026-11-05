@@ -1473,6 +1473,10 @@ Details:
 7. Use case ends.
 
 **Extensions:**
+- 4a. The course admin or instructor cancels or dismisses the warning:
+  - The system closes the warning without requesting deactivation; the account, team membership, and prior work remain unchanged. The use case ends.
+- 6d. Saving deactivation fails:
+  - The system does not report success, reports that deactivation could not be confirmed, and offers retry after refreshing the student's status. An uncommitted change is rolled back.
 - 2a, 6b. The caller is not permitted by BR-student-lifecycle:
   - The system refuses access without changing the student and ends the use case. Permission is checked again when deactivation is requested.
 - 2b, 6c. The student no longer exists:
