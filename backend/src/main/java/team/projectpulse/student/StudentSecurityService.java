@@ -31,6 +31,14 @@ public class StudentSecurityService {
         return studentId.equals(studentIdFromJwt);
     }
 
+    public boolean canAccessProfile(Integer studentId) {
+        Integer callerId = this.userUtils.getUserId();
+        if (callerId == null) return false;
+        if (studentId.equals(callerId)) return true;
+        boolean staff = this.userUtils.hasRole("ROLE_instructor") || this.userUtils.hasRole("ROLE_admin");
+        return staff && this.studentRepository.countAccessibleProfile(studentId, callerId, false, true) > 0;
+    }
+
     /**
      * Check if the user is the instructor of the section that the student is in
      *

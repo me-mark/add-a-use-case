@@ -9,8 +9,8 @@ import jakarta.transaction.Transactional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.access.AccessDeniedException;
+import team.projectpulse.system.exception.StudentStatusConflictException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -104,25 +104,58 @@ public class StudentService {
         return savedStudent;
     }
 
-    public Student updateStudent(Integer studentId, Student update) {
-        Student oldStudent = this.studentRepository.findById(studentId)
-                .orElseThrow(() -> new ObjectNotFoundException("student", studentId));
-
-        // If the user is not an admin, then the user can only update her username, first rubricName, last rubricName, and email
+    public Student updateStudent(Integer studentId, Student update, boolean expectedEnabled) {
+        boolean staff = isStaff();
+        Student oldStudent = lockProfile(studentId, true, staff);
+        if (oldStudent.isEnabled() != expectedEnabled) {
+            throw new StudentStatusConflictException();
+        }
+        if (staff && oldStudent.isEnabled() && !update.isEnabled()) {
+            throw new IllegalArgumentException("Use Deactivate student to disable the account.");
+        }
         oldStudent.setUsername(update.getUsername());
         oldStudent.setFirstName(update.getFirstName());
         oldStudent.setLastName(update.getLastName());
         oldStudent.setEmail(update.getEmail());
 
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-
-        // If the user is an admin, then the user can update all the fields
-        if (authentication.getAuthorities().stream().anyMatch(grantedAuthority -> grantedAuthority.getAuthority().equals("ROLE_instructor"))) {
+        if (staff) {
             oldStudent.setEnabled(update.isEnabled());
-//            oldStudent.setRoles(update.getRoles());
         }
 
         return this.studentRepository.save(oldStudent);
+    }
+
+    public record Deactivation(Student student, boolean changed) {}
+
+    public Deactivation deactivateStudent(Integer studentId) {
+        if (studentId < 1) {
+            throw new IllegalArgumentException("Student ID must be positive.");
+        }
+        if (!isStaff()) {
+            throw new AccessDeniedException("Only authorized instructors can deactivate students.");
+        }
+        Student student = lockProfile(studentId, false, true);
+        if (!student.isEnabled()) {
+            return new Deactivation(student, false);
+        }
+        student.setEnabled(false);
+        return new Deactivation(this.studentRepository.save(student), true);
+    }
+
+    private boolean isStaff() {
+        return this.userUtils.getUserId() != null
+                && (this.userUtils.hasRole("ROLE_instructor") || this.userUtils.hasRole("ROLE_admin"));
+    }
+
+    private Student lockProfile(Integer studentId, boolean allowSelf, boolean staff) {
+        Integer callerId = this.userUtils.getUserId();
+        if (callerId == null) {
+            throw new AccessDeniedException("You cannot change this student account.");
+        }
+        return this.studentRepository.findProfileForUpdate(studentId, callerId, allowSelf, staff)
+                .orElseThrow(() -> this.studentRepository.existsById(studentId)
+                        ? new AccessDeniedException("You cannot change this student account.")
+                        : new ObjectNotFoundException("student", studentId));
     }
 
     public void deleteStudent(Integer studentId) {
