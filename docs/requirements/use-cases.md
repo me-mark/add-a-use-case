@@ -1488,6 +1488,7 @@ Details:
 **Business Rules:** BR-student-lifecycle, BR-deactivated-evaluatee, BR-student-deactivation-team, BR-submission-owed
 
 **Associated Information:**
+- Deactivation is a dedicated confirmed action; an ordinary profile edit cannot deactivate the student. A profile save carries the account status originally loaded by its form. If that status has changed before the save, the system rejects the entire save without changing the account or profile and asks the caller to reload. Checking and saving are atomic with deactivation so a stale form cannot unintentionally reactivate the student.
 - FR-SEC-active-account applies to the next protected request even when the student holds an unexpired login token. The warning in step 4 states that existing access ends, no further reports or evaluations may be submitted, reminders stop, teammates cannot submit new evaluations of her, and team membership and prior work remain.
 - Apply BR-deactivated-evaluatee to new peer evaluations and to the course section's weekly peer evaluation report; prior work remains available under the existing visibility rules.
 - For a student on a team, apply BR-student-deactivation-team and BR-submission-owed.
@@ -1529,6 +1530,7 @@ Details:
 **Business Rules:** BR-student-lifecycle
 
 **Associated Information:**
+- An existing profile-edit control may intentionally reactivate a student only when the form was loaded with that account inactive and the stored status still matches its original snapshot. A stale form loaded before deactivation must reload instead of restoring access. This concurrency precondition does not add a new reactivation action or workflow.
 - Deactivation preserves team membership per BR-student-deactivation-team; reactivation does not restore an earlier team assignment if membership has subsequently changed. Apply BR-submission-owed to the current team and account status after reactivation.
 - The course admin or instructor shall be able to cancel the use case at any time prior to submitting it.
 
