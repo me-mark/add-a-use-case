@@ -1473,6 +1473,10 @@ Details:
 7. Use case ends.
 
 **Extensions:**
+- 2a, 6b. The caller is not permitted by BR-student-lifecycle:
+  - The system refuses access without changing the student and ends the use case. Permission is checked again when deactivation is requested.
+- 2b, 6c. The student no longer exists:
+  - The system reports that the student was not found, changes nothing, and ends the use case.
 - 6a. The student is already deactivated, including when another authorized actor deactivated her after step 4:
   - The system reports that the student is already deactivated, changes nothing, and ends the use case.
 **Priority:** Low
